@@ -1,0 +1,17 @@
+{
+  "name": "fibjs-memcache",
+  "version": "1.0.0",
+  "description": "",
+  "main": "./out/index.js",
+  "types": "./src/index.d.ts",
+  "private": false,
+  "author": "",
+  "homepage": "https://github.com/lhkzh/fibjs-memcache",
+  "license": "ISC",
+  "dependencies": {
+  },
+  "devDependencies": {
+    "@fibjs/types": "^0.29.0"
+  },
+  "peerDependencies": {}
+}
