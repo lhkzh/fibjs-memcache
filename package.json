@@ -1,6 +1,6 @@
 {
   "name": "fibjs-memcache",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "",
   "main": "./out/index.js",
   "types": "./src/index.d.ts",
@@ -13,5 +13,6 @@
   "devDependencies": {
     "@fibjs/types": "^0.29.0"
   },
-  "peerDependencies": {}
+  "peerDependencies": {},
+  "keywords": ["fibjs","memcache"]
 }

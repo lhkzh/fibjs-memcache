@@ -20,7 +20,7 @@ export class MemcachedBin {
     private connectArgs:any;
     private urlList:string[];
     private numberParse:number=0;// 0=number 1=string 2=bigint 3=auto(number/bigint)
-    private waitReOpenEvent:Class_Event;
+    private wait_connect: Class_Semaphore;
 
     /**
      * @param autoReconnect 是否开启重连
@@ -29,6 +29,7 @@ export class MemcachedBin {
     public constructor(autoReconnect:boolean=true, numberParse:number=0){
         this.autoReconnect=autoReconnect;
         this.numberParse=numberParse;
+        this.wait_connect = new coroutine.Semaphore(1);
     }
     //关闭连接
     public close(){
@@ -63,63 +64,66 @@ export class MemcachedBin {
      * @throws Error 链接失败抛出错误
      */
     public connect(host?:string, port?:number, timeout?:number){
+        if(this.wait_connect.acquire(false)==false){
+            this.wait_connect.acquire();
+            if (this.isClosed()) {
+                this.wait_connect.release();
+                throw new Error("io_error:connect fcgi fail");
+            }
+        }
         host=host||"127.0.0.1";
         port=port||11211;
         timeout=timeout||3000;
         this.connectArgs=arguments;
-        this.sock=new net.Socket();
-        this.sock.timeout=timeout;
-        this.sock.connect(host, port);
-        this.stream=new io.BufferedStream(this.sock);
-        this.stream.EOL="\r\n";
-        this.stat=1;
+        try{
+            this.sock=new net.Socket();
+            this.sock.timeout=timeout;
+            this.sock.connect(host, port);
+            this.stream=new io.BufferedStream(this.sock);
+            this.stream.EOL="\r\n";
+            this.stat=1;
+        }catch (e) {
+            console.error(`memcache connect fail host=${host} port=${port}`);
+            throw e;
+        }finally {
+            this.wait_connect.release();
+        }
         return this;
+    }
+    private isClosed(){
+        return !this.sock || this.stat!=1;
     }
     /**
      * 重连
      */
     public reconnect(){
-        if(this.stat!=2){
-            return;
-        }
-        if(this.waitReOpenEvent!=null){
-            this.waitReOpenEvent.wait();
-            return;
+        if(!this.isClosed()){
+            return this;
         }
         var connectArgs=this.connectArgs;
-        this.connectArgs=null;
-        var evt=new coroutine.Event(false);
-        this.waitReOpenEvent=evt;
-        var self=this;
-        coroutine.start(function(){
-            var ok=false;
-            for(var i=0;i<9999;i++){
-                if(self.stat!=2){
-                    return;
-                }
-                try{
-                    if(self.urlList.length>1){
-                        self.connectUrl(self.urlList);
-                    }else{
-                        self.connect(connectArgs[0],connectArgs[1],connectArgs[2]);
-                    }
-                    ok=true;
-                    break;
-                }catch (e) {
-                    coroutine.sleep(Math.ceil(10+100*Math.random()));
-                }
+        var max=9999;
+        for(var i=0;i<9999;i++){
+            if(!this.isClosed()){
+                return;
             }
-            if(!ok){
-                this.connectArgs=connectArgs;
-                console.error("io_memcached_reconnect_fail %s",JSON.stringify(connectArgs));
+            try{
+                if(this.urlList.length>1){
+                    this.connectUrl(this.urlList);
+                }else{
+                    this.connect(connectArgs[0],connectArgs[1],connectArgs[2]);
+                }
+                return;
+            }catch (e) {
+                if(i+1==max){
+                    throw e;
+                }
+                coroutine.sleep(Math.ceil(1+100*Math.random()));
             }
-            self.waitReOpenEvent=null;
-            evt.set();
-        }.bind(this));
+        }
+        return this;
     }
     private writeLine(s){
-        this.reconnect();
-        this.stream.writeLine(s);
+        this.reconnect().stream.writeLine(s);
     }
     /**
      * 检测链接是否可用
